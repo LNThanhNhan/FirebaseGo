@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -40,7 +39,7 @@ func UploadImage(w http.ResponseWriter, r *http.Request) {
 	path := os.Getenv("IMG_PATH")
 	imageFile, _, err := r.FormFile("image")
 	if err != nil {
-		http.Error(w, "Error reading image file from request", http.StatusInternalServerError)
+		HandleError(w, err, "Error reading image file from request")
 		return
 	}
 	defer imageFile.Close()
@@ -62,7 +61,7 @@ func UploadImage(w http.ResponseWriter, r *http.Request) {
 	jsonData := MakeSuccessResponse(&Data)
 	ReturnResponse(w, jsonData)
 	if _, err = io.Copy(writer, imageFile); err != nil {
-		fmt.Printf("error uploading image: %v", err)
+		HandleError(w, err, "Error uploading image")
 		return
 	}
 }
@@ -74,7 +73,7 @@ func UpdateImage(w http.ResponseWriter, r *http.Request) {
 	path := os.Getenv("IMG_PATH")
 	imageFile, _, err := r.FormFile("image")
 	if err != nil {
-		http.Error(w, "Error reading image file from request", http.StatusInternalServerError)
+		HandleError(w, err, "Error reading image file from request")
 		return
 	}
 	objectHandle := bucket.Object(path + id)
@@ -94,14 +93,15 @@ func UpdateImage(w http.ResponseWriter, r *http.Request) {
 	jsonData := MakeSuccessResponse(&Data)
 	ReturnResponse(w, jsonData)
 	if _, err = io.Copy(writer, imageFile); err != nil {
-		fmt.Printf("error uploading image: %v", err)
+		HandleError(w, err, "Error uploading image")
 		return
 	}
 }
 
 func DeleteImage(w http.ResponseWriter, r *http.Request) {
+
 	bucket := initializeApp(w)
-	id := r.FormValue("id")
+	id := r.URL.Query().Get("id")
 	path := os.Getenv("IMG_PATH")
 	objectHandle := bucket.Object(path + id)
 	err := objectHandle.Delete(context.Background())
