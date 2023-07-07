@@ -3,22 +3,20 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 )
 
 type Response struct {
-	Success bool          `json:"success"`
-	Message string        `json:"message"`
-	Data    []interface{} `json:"data"`
+	Success bool        `json:"success"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
 }
 
 func MakeSuccessResponse(Data interface{}) []byte {
 	response := Response{
 		Success: true,
 		Message: "Success",
-		Data:    []interface{}{Data},
+		Data:    Data,
 	}
-	log.Printf("%+v\n", response)
 	jsonData, err := json.Marshal(response)
 	if err != nil {
 		fmt.Print("Error coverting data to JSON")
