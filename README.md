@@ -55,7 +55,9 @@ Response
 ```http
   DELETE /img/delete
 ```
-Request
+Request 
+
+  Lưu ý: phải sử dụng query string, vì phương thức DELETE không chứa body. [Tìm hiểu thêm](https://stackoverflow.com/questions/59011487/body-of-delete-request-is-empty-in-my-rest-api-endpoint)
 | Parameter | Type     | Description                       |
 | :-------- | :------- | :-------------------------------- |
 | `id`      | `int` |  **(Bắt buộc)** ID ảnh trên Storage|
