@@ -13,37 +13,42 @@ import (
 	"google.golang.org/api/option"
 )
 
-func initializeApp(w http.ResponseWriter) *storage.BucketHandle {
+func initializeApp(w http.ResponseWriter, buCh chan *storage.BucketHandle) {
 	opt := option.WithCredentialsFile("serviceAccountKey.json")
 	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
-		HandleError(w, err, "Error initializing app")
-		return nil
+		go HandleError(w, err, "Error initializing app")
+		buCh <- nil
 	}
 	client, err := app.Storage(context.TODO())
 	if err != nil {
-		HandleError(w, err, "Error initializing client")
-		return nil
+		go HandleError(w, err, "Error initializing client")
+		buCh <- nil
 	}
 	bucket, err := client.Bucket(os.Getenv("BUCKET_NAME"))
 	if err != nil {
-		HandleError(w, err, "Error initializing bucket")
-		return nil
+		go HandleError(w, err, "Error initializing bucket")
+		buCh <- nil
 	}
-	return bucket
+	buCh <- bucket
 }
 
 func UploadImage(w http.ResponseWriter, r *http.Request) {
-	bucket := initializeApp(w)
+	bucketCh := make(chan *storage.BucketHandle)
+	go initializeApp(w, bucketCh)
 	//Get image from request
 	path := os.Getenv("IMG_PATH")
 	imageFile, _, err := r.FormFile("image")
 	if err != nil {
-		HandleError(w, err, "Error reading image file from request")
+		go HandleError(w, err, "Error reading image file from request")
 		return
 	}
 	defer imageFile.Close()
 	id := uuid.New().String()
+	bucket := <-bucketCh
+	if bucket == nil {
+		return
+	}
 	objectHandle := bucket.Object(path + id)
 	writer := objectHandle.NewWriter(context.Background())
 	writer.ObjectAttrs.Metadata = map[string]string{"firebaseStorageDownloadTokens": id}
@@ -62,18 +67,23 @@ func UploadImage(w http.ResponseWriter, r *http.Request) {
 	ReturnResponse(w, jsonData)
 	if _, err = io.Copy(writer, imageFile); err != nil {
 		HandleError(w, err, "Error uploading image")
-		return
 	}
 }
 
 func UpdateImage(w http.ResponseWriter, r *http.Request) {
-	bucket := initializeApp(w)
+	bucketCh := make(chan *storage.BucketHandle)
+	go initializeApp(w, bucketCh)
 	//Get image from request
 	id := r.FormValue("id")
 	path := os.Getenv("IMG_PATH")
 	imageFile, _, err := r.FormFile("image")
 	if err != nil {
-		HandleError(w, err, "Error reading image file from request")
+		go HandleError(w, err, "Error reading image file from request")
+		return
+	}
+	defer imageFile.Close()
+	bucket := <-bucketCh
+	if bucket == nil {
 		return
 	}
 	objectHandle := bucket.Object(path + id)
@@ -94,19 +104,19 @@ func UpdateImage(w http.ResponseWriter, r *http.Request) {
 	ReturnResponse(w, jsonData)
 	if _, err = io.Copy(writer, imageFile); err != nil {
 		HandleError(w, err, "Error uploading image")
-		return
 	}
 }
 
 func DeleteImage(w http.ResponseWriter, r *http.Request) {
-
-	bucket := initializeApp(w)
+	bucketCh := make(chan *storage.BucketHandle)
+	go initializeApp(w, bucketCh)
 	id := r.URL.Query().Get("id")
 	path := os.Getenv("IMG_PATH")
+	bucket := <-bucketCh
 	objectHandle := bucket.Object(path + id)
 	err := objectHandle.Delete(context.Background())
 	if err != nil {
-		HandleError(w, err, "Error deleting image")
+		go HandleError(w, err, "Error deleting image")
 	} else {
 		Data := struct {
 			Msg string
