@@ -1,4 +1,4 @@
-# Webserver tích hợp các hợp các dịch vụ của Firebase
+# Web server tích hợp các hợp các dịch vụ của Firebase
 
 ## Mục đích
 &nbsp; &nbsp; Nhằm tiết kiệm thời gian mỗi lần xây dựng backend thì phải xây dựng thêm các dịch vụ cơ bản như Firesbase vào. Thì giờ đây,chỉ cần viết API gọi đến web server này. Có tích hợp goroutine để xử lý nhanh hơn.
