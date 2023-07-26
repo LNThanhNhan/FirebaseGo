@@ -13,7 +13,98 @@ import (
 	"google.golang.org/api/option"
 )
 
-func initializeApp(w http.ResponseWriter, buCh chan *storage.BucketHandle) {
+func UploadImage(w http.ResponseWriter, r *http.Request) {
+	bucketCh := make(chan *storage.BucketHandle)
+	go initializeBucket(w, bucketCh)
+
+	imageId, path, imageFile := InitializeImageDataFromPostRequest(w, r)
+
+	bucket := <-bucketCh
+	StoreImageInBucket(w, bucket, path, imageId, imageFile)
+
+	Data := CreateResponseData(imageId, path)
+	jsonData := MakeSuccessResponse(&Data)
+	ReturnResponse(w, jsonData)
+}
+
+func UpdateImage(w http.ResponseWriter, r *http.Request) {
+	bucketCh := make(chan *storage.BucketHandle)
+	go initializeBucket(w, bucketCh)
+
+	imageId, path, imageFile := InitializeImageDataFromPutRequest(w, r)
+
+	bucket := <-bucketCh
+	StoreImageInBucket(w, bucket, path, imageId, imageFile)
+	Data := CreateResponseData(imageId, path)
+	jsonData := MakeSuccessResponse(&Data)
+	ReturnResponse(w, jsonData)
+}
+
+func DeleteImage(w http.ResponseWriter, r *http.Request) {
+	bucketCh := make(chan *storage.BucketHandle)
+	go initializeBucket(w, bucketCh)
+
+	id, path := InitializeImageDataFromDeleteRequest(w, r)
+
+	bucket := <-bucketCh
+	objectHandle := bucket.Object(path + id)
+	err := objectHandle.Delete(context.Background())
+	if err != nil {
+		go HandleError(w, err, "Error deleting image")
+	} else {
+		Data := struct {
+			Msg string
+		}{
+			Msg: "Image deleted",
+		}
+		json := MakeSuccessResponse(&Data)
+		ReturnResponse(w, json)
+	}
+}
+
+func InitializeImageDataFromPostRequest(w http.ResponseWriter, r *http.Request) (string, string, io.Reader) {
+	imageId := uuid.New().String()
+	path := os.Getenv("IMG_PATH")
+	imageFile, _, err := r.FormFile("image")
+	if err != nil {
+		go HandleError(w, err, "Error reading image file from request")
+	}
+	defer imageFile.Close()
+	return imageId, path, imageFile
+}
+
+func InitializeImageDataFromPutRequest(w http.ResponseWriter, r *http.Request) (string, string, io.Reader) {
+	imageId := r.FormValue("id")
+	path := os.Getenv("IMG_PATH")
+	imageFile, _, err := r.FormFile("image")
+	if err != nil {
+		go HandleError(w, err, "Error reading image file from request")
+	}
+	defer imageFile.Close()
+	return imageId, path, imageFile
+}
+
+func InitializeImageDataFromDeleteRequest(w http.ResponseWriter, r *http.Request) (string, string) {
+	imageId := r.URL.Query().Get("id")
+	path := os.Getenv("IMG_PATH")
+	return imageId, path
+}
+
+func CreateResponseData(imageId string, path string) interface{} {
+	imgPath := url.PathEscape(path + imageId)
+	//Make url from image path
+	url := os.Getenv("FIREBASE_DOMAIN") + os.Getenv("BUCKET_NAME") + "/o/" + imgPath + "?alt=media&token=" + imageId
+	Data := struct {
+		Url string
+		Id  string
+	}{
+		Url: url,
+		Id:  imageId,
+	}
+	return Data
+}
+
+func initializeBucket(w http.ResponseWriter, buCh chan *storage.BucketHandle) {
 	opt := option.WithCredentialsFile("serviceAccountKey.json")
 	app, err := firebase.NewApp(context.Background(), nil, opt)
 	if err != nil {
@@ -33,98 +124,13 @@ func initializeApp(w http.ResponseWriter, buCh chan *storage.BucketHandle) {
 	buCh <- bucket
 }
 
-func UploadImage(w http.ResponseWriter, r *http.Request) {
-	bucketCh := make(chan *storage.BucketHandle)
-	go initializeApp(w, bucketCh)
-	//Get image from request
-	path := os.Getenv("IMG_PATH")
-	imageFile, _, err := r.FormFile("image")
-	if err != nil {
-		go HandleError(w, err, "Error reading image file from request")
-		return
-	}
-	defer imageFile.Close()
-	id := uuid.New().String()
-	bucket := <-bucketCh
-	if bucket == nil {
-		return
-	}
+func StoreImageInBucket(w http.ResponseWriter, bucket *storage.BucketHandle, path string, id string, imageFile io.Reader) {
 	objectHandle := bucket.Object(path + id)
 	writer := objectHandle.NewWriter(context.Background())
 	writer.ObjectAttrs.Metadata = map[string]string{"firebaseStorageDownloadTokens": id}
 	defer writer.Close()
-	//Make url from image
-	img_path := url.PathEscape(path + id)
-	url := os.Getenv("FIREBASE_DOMAIN") + os.Getenv("BUCKET_NAME") + "/o/" + img_path + "?alt=media&token=" + id
-	Data := struct {
-		Url string
-		Id  string
-	}{
-		Url: url,
-		Id:  id,
-	}
-	jsonData := MakeSuccessResponse(&Data)
-	ReturnResponse(w, jsonData)
-	if _, err = io.Copy(writer, imageFile); err != nil {
+	if _, err := io.Copy(writer, imageFile); err != nil {
 		HandleError(w, err, "Error uploading image")
-	}
-}
-
-func UpdateImage(w http.ResponseWriter, r *http.Request) {
-	bucketCh := make(chan *storage.BucketHandle)
-	go initializeApp(w, bucketCh)
-	//Get image from request
-	id := r.FormValue("id")
-	path := os.Getenv("IMG_PATH")
-	imageFile, _, err := r.FormFile("image")
-	if err != nil {
-		go HandleError(w, err, "Error reading image file from request")
-		return
-	}
-	defer imageFile.Close()
-	bucket := <-bucketCh
-	if bucket == nil {
-		return
-	}
-	objectHandle := bucket.Object(path + id)
-	writer := objectHandle.NewWriter(context.Background())
-	writer.ObjectAttrs.Metadata = map[string]string{"firebaseStorageDownloadTokens": id}
-	defer writer.Close()
-	//Make url from image
-	img_path := url.PathEscape(path + id)
-	url := os.Getenv("FIREBASE_DOMAIN") + os.Getenv("BUCKET_NAME") + "/o/" + img_path + "?alt=media&token=" + id
-	Data := struct {
-		Url string
-		Id  string
-	}{
-		Url: url,
-		Id:  id,
-	}
-	jsonData := MakeSuccessResponse(&Data)
-	ReturnResponse(w, jsonData)
-	if _, err = io.Copy(writer, imageFile); err != nil {
-		HandleError(w, err, "Error uploading image")
-	}
-}
-
-func DeleteImage(w http.ResponseWriter, r *http.Request) {
-	bucketCh := make(chan *storage.BucketHandle)
-	go initializeApp(w, bucketCh)
-	id := r.URL.Query().Get("id")
-	path := os.Getenv("IMG_PATH")
-	bucket := <-bucketCh
-	objectHandle := bucket.Object(path + id)
-	err := objectHandle.Delete(context.Background())
-	if err != nil {
-		go HandleError(w, err, "Error deleting image")
-	} else {
-		Data := struct {
-			Msg string
-		}{
-			Msg: "Image deleted",
-		}
-		json := MakeSuccessResponse(&Data)
-		ReturnResponse(w, json)
 	}
 }
 
