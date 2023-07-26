@@ -22,7 +22,7 @@ func UploadImage(w http.ResponseWriter, r *http.Request) {
 	bucket := <-bucketCh
 	StoreImageInBucket(w, bucket, path, imageId, imageFile)
 
-	Data := CreateResponseData(imageId, path)
+	Data := CreateResponseDataAfterStoreImage(imageId, path)
 	jsonData := MakeSuccessResponse(&Data)
 	ReturnResponse(w, jsonData)
 }
@@ -35,7 +35,7 @@ func UpdateImage(w http.ResponseWriter, r *http.Request) {
 
 	bucket := <-bucketCh
 	StoreImageInBucket(w, bucket, path, imageId, imageFile)
-	Data := CreateResponseData(imageId, path)
+	Data := CreateResponseDataAfterStoreImage(imageId, path)
 	jsonData := MakeSuccessResponse(&Data)
 	ReturnResponse(w, jsonData)
 }
@@ -47,19 +47,10 @@ func DeleteImage(w http.ResponseWriter, r *http.Request) {
 	id, path := InitializeImageDataFromDeleteRequest(w, r)
 
 	bucket := <-bucketCh
-	objectHandle := bucket.Object(path + id)
-	err := objectHandle.Delete(context.Background())
-	if err != nil {
-		go HandleError(w, err, "Error deleting image")
-	} else {
-		Data := struct {
-			Msg string
-		}{
-			Msg: "Image deleted",
-		}
-		json := MakeSuccessResponse(&Data)
-		ReturnResponse(w, json)
-	}
+	DeleteImageFromBucket(w, bucket, path, id)
+	Data := CreateResponseDataAfterDeleteImage("Image deleted")
+	json := MakeSuccessResponse(&Data)
+	ReturnResponse(w, json)
 }
 
 func InitializeImageDataFromPostRequest(w http.ResponseWriter, r *http.Request) (string, string, io.Reader) {
@@ -90,9 +81,8 @@ func InitializeImageDataFromDeleteRequest(w http.ResponseWriter, r *http.Request
 	return imageId, path
 }
 
-func CreateResponseData(imageId string, path string) interface{} {
+func CreateResponseDataAfterStoreImage(imageId string, path string) interface{} {
 	imgPath := url.PathEscape(path + imageId)
-	//Make url from image path
 	url := os.Getenv("FIREBASE_DOMAIN") + os.Getenv("BUCKET_NAME") + "/o/" + imgPath + "?alt=media&token=" + imageId
 	Data := struct {
 		Url string
@@ -100,6 +90,15 @@ func CreateResponseData(imageId string, path string) interface{} {
 	}{
 		Url: url,
 		Id:  imageId,
+	}
+	return Data
+}
+
+func CreateResponseDataAfterDeleteImage(msg string) interface{} {
+	Data := struct {
+		Msg string
+	}{
+		Msg: "Image deleted",
 	}
 	return Data
 }
@@ -131,6 +130,14 @@ func StoreImageInBucket(w http.ResponseWriter, bucket *storage.BucketHandle, pat
 	defer writer.Close()
 	if _, err := io.Copy(writer, imageFile); err != nil {
 		HandleError(w, err, "Error uploading image")
+	}
+}
+
+func DeleteImageFromBucket(w http.ResponseWriter, bucket *storage.BucketHandle, path string, id string) {
+	objectHandle := bucket.Object(path + id)
+	err := objectHandle.Delete(context.Background())
+	if err != nil {
+		go HandleError(w, err, "Error deleting image")
 	}
 }
 
